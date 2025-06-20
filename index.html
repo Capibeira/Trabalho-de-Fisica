@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo de Tabuleiro 3D com Dado Tetraédrico</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            max-width: 300px;
+        }
+        #question, #feedback { margin: 10px 0; font-size: 16px; }
+        button {
+            margin: 5px;
+            padding: 8px 12px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <button id="rollDie">Rolar Dado</button>
+        <div id="question" style="display: none;"></div>
+        <div id="answers" style="display: none;"></div>
+        <div id="feedback" style="display: none;"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        // Board
+        const boardGeometry = new THREE.PlaneGeometry(12, 6);
+        const boardMaterial = new THREE.MeshBasicMaterial({ color: 0x228B22 });
+        const board = new THREE.Mesh(boardGeometry, boardMaterial);
+        board.rotation.x = -Math.PI / 2;
+        scene.add(board);
+
+        // Board spaces (20 positions in a zigzag pattern)
+        const boardPositions = [];
+        for (let i = 0; i < 20; i++) {
+            const x = (i % 5) * 2 - 4; // 5 spaces per row
+            const z = Math.floor(i / 5) * 1.5 - 2.25; // 4 rows
+            const markerGeometry = new THREE.SphereGeometry(0.15, 32, 32);
+            const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+            marker.position.set(x, 0.15, z);
+            scene.add(marker);
+            boardPositions.push(marker.position.clone());
+        }
+
+        // Player
+        const playerGeometry = new THREE.SphereGeometry(0.25, 32, 32);
+        const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+        const player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.position.copy(boardPositions[0]);
+        scene.add(player);
+
+        // Tetrahedron die
+        const tetraGeometry = new THREE.TetrahedronGeometry(0.4);
+        const tetraMaterials = [
+            new THREE.MeshBasicMaterial({ color: 0xffffff }), // Face 1
+            new THREE.MeshBasicMaterial({ color: 0xffffff }), // Face 2
+            new THREE.MeshBasicMaterial({ color: 0xffffff }), // Face 3
+            new THREE.MeshBasicMaterial({ color: 0xffffff })  // Face 4
+        ];
+        const die = new THREE.Mesh(tetraGeometry, tetraMaterials);
+        die.position.set(0, 1, 3);
+        scene.add(die);
+
+        // Camera position
+        camera.position.set(0, 5, 6);
+        camera.lookAt(0, 0, 0);
+
+        // Game logic
+        let currentPosition = 0;
+        let isRolling = false;
+        const questions = [
+            { question: "O que é o comprimento de onda?", answers: ["A altura da onda", "A distância entre duas cristas consecutivas", "O tempo que uma onda leva para completar um ciclo", "A velocidade da onda"], correct: 1 },
+            { question: "O que a frequência de uma onda mede?", answers: ["O número de ondas que passam por um ponto por segundo", "A altura da onda", "A velocidade da onda", "A distância entre duas ondas"], correct: 0 },
+            { question: "O que é a amplitude de uma onda?", answers: ["A distância entre duas cristas", "O deslocamento máximo da posição de equilíbrio", "O tempo para um ciclo completo da onda", "A velocidade da onda"], correct: 1 },
+            { question: "Qual tipo de onda precisa de um meio para se propagar?", answers: ["Onda eletromagnética", "Onda transversal", "Onda longitudinal", "Onda de luz"], correct: 2 },
+            { question: "Qual é um exemplo de onda transversal?", answers: ["Onda sonora", "Onda em uma corda", "Onda de compressão", "Onda sísmica primária"], correct: 1 },
+            { question: "Como se calcula a velocidade de uma onda?", answers: ["Frequência ÷ Comprimento de onda", "Amplitude × Comprimento de onda", "Frequência × Comprimento de onda", "Amplitude ÷ Frequência"], correct: 2 },
+            { question: "O que acontece na reflexão de uma onda?", answers: ["A onda se curva ao passar por um meio", "A onda retorna ao atingir uma superfície", "Duas ondas se combinam formando uma nova onda", "A velocidade da onda aumenta"], correct: 1 },
+            { question: "Qual propriedade da onda é medida em Hertz (Hz)?", answers: ["Comprimento de onda", "Amplitude", "Frequência", "Velocidade"], correct: 2 },
+            { question: "Qual é um exemplo de onda longitudinal?", answers: ["Onda de luz", "Onda de rádio", "Onda sonora", "Onda em uma corda"], correct: 2 },
+            { question: "O que é o período de uma onda?", answers: ["A distância entre duas cristas", "O tempo para um ciclo completo da onda", "A altura da onda", "A velocidade da onda"], correct: 1 },
+            { question: "O que é a interferência de ondas?", answers: ["Quando uma onda muda de direção ao passar por uma abertura", "Quando duas ondas se encontram e formam uma nova onda", "Quando uma onda reflete em uma superfície", "Quando uma onda aumenta sua velocidade"], correct: 1 },
+            { question: "Qual é a unidade do comprimento de onda?", answers: ["Hertz (Hz)", "Metro (m)", "Segundo (s)", "Metro por segundo (m/s)"], correct: 1 },
+            { question: "Qual tipo de onda é a luz?", answers: ["Onda longitudinal", "Onda mecânica", "Onda transversal", "Onda de compressão"], correct: 2 },
+            { question: "O que acontece na refração de uma onda?", answers: ["A onda retorna ao atingir uma superfície", "A onda se curva ao passar de um meio para outro", "Duas ondas se combinam", "A onda para completamente"], correct: 1 },
+            { question: "Qual é a relação entre período e frequência?", answers: ["Frequência = Período × Velocidade", "Período = 1 ÷ Frequência", "Período = Frequência × Comprimento de onda", "Frequência = Período ÷ Amplitude"], correct: 1 },
+            { question: "Qual é um exemplo de onda eletromagnética?", answers: ["Onda sonora", "Onda em uma mola", "Onda de rádio", "Onda em uma corda"], correct: 2 },
+            { question: "O que determina a altura de um som (grave ou agudo)?", answers: ["Amplitude", "Frequência", "Comprimento de onda", "Velocidade"], correct: 1 },
+            { question: "O que é a difração de uma onda?", answers: ["A onda reflete em uma superfície", "A onda se espalha ao passar por uma abertura ou obstáculo", "A onda muda de meio", "A onda aumenta sua amplitude"], correct: 1 },
+            { question: "Qual é a velocidade do som no ar em condições normais?", answers: ["300 m/s", "340 m/s", "1500 m/s", "300,000 km/s"], correct: 1 },
+            { question: "O que acontece quando duas ondas se encontram em fase oposta?", answers: ["Interferência construtiva", "Interferência destrutiva", "Refração", "Reflexão"], correct: 1 }
+        ];
+        let currentQuestion = null;
+
+        const rollDieButton = document.getElementById('rollDie');
+        const questionDiv = document.getElementById('question');
+        const answersDiv = document.getElementById('answers');
+        const feedbackDiv = document.getElementById('feedback');
+
+        rollDieButton.addEventListener('click', rollDie);
+
+        function rollDie() {
+            if (isRolling) return;
+            isRolling = true;
+            rollDieButton.disabled = true;
+
+            const rollTime = 1500;
+            const startTime = Date.now();
+            function animateDie() {
+                const elapsed = Date.now() - startTime;
+                if (elapsed < rollTime) {
+                    die.rotation.x += Math.random() * 0.4;
+                    die.rotation.y += Math.random() * 0.4;
+                    die.rotation.z += Math.random() * 0.4;
+                    die.position.y = 1 + Math.sin(elapsed * 0.005) * 0.3;
+                    requestAnimationFrame(animateDie);
+                } else {
+                    die.position.y = 1;
+                    let result = Math.floor(Math.random() * 4) + 1;
+                    switch (result) {
+                        case 1: die.rotation.set(0, 0, 0); break;
+                        case 2: die.rotation.set(Math.PI / 2, 0, Math.PI / 4); break;
+                        case 3: die.rotation.set(-Math.PI / 2, Math.PI / 4, 0); break;
+                        case 4: die.rotation.set(Math.PI, Math.PI / 2, 0); break;
+                    }
+                    isRolling = false;
+                    movePlayer(result);
+                }
+            }
+            animateDie();
+        }
+
+        function movePlayer(steps) {
+            let targetPosition = Math.min(currentPosition + steps, boardPositions.length - 1);
+            let startPosition = player.position.clone();
+            let moveTime = 500 * Math.abs(targetPosition - currentPosition);
+            let startTime = Date.now();
+
+            function animateMove() {
+                let elapsed = Date.now() - startTime;
+                let t = Math.min(elapsed / moveTime, 1);
+                player.position.lerpVectors(startPosition, boardPositions[targetPosition], t);
+                if (t < 1) {
+                    requestAnimationFrame(animateMove);
+                } else {
+                    currentPosition = targetPosition;
+                    showQuestion();
+                }
+            }
+            animateMove();
+        }
+
+        function showQuestion() {
+            currentQuestion = questions[Math.floor(Math.random() * questions.length)];
+            questionDiv.textContent = currentQuestion.question;
+            questionDiv.style.display = 'block';
+            answersDiv.style.display = 'block';
+            answersDiv.innerHTML = '';
+            currentQuestion.answers.forEach((answer, index) => {
+                let button = document.createElement('button');
+                button.textContent = answer;
+                button.addEventListener('click', () => checkAnswer(index));
+                answersDiv.appendChild(button);
+            });
+        }
+
+        function checkAnswer(index) {
+            feedbackDiv.style.display = 'block';
+            let startPosition = player.position.clone();
+            let moveTime = 1000; // 1 second for penalty/reward movement
+            let startTime = Date.now();
+
+            if (index === currentQuestion.correct) {
+                feedbackDiv.textContent = 'Correto! Você avançou 2 casas!';
+                currentPosition = Math.min(currentPosition + 2, boardPositions.length - 1);
+            } else {
+                feedbackDiv.textContent = 'Errado! Você voltou 2 casas!';
+                currentPosition = Math.max(currentPosition - 2, 0);
+            }
+
+            function animateRewardOrPenalty() {
+                let elapsed = Date.now() - startTime;
+                let t = Math.min(elapsed / moveTime, 1);
+                player.position.lerpVectors(startPosition, boardPositions[currentPosition], t);
+                if (t < 1) {
+                    requestAnimationFrame(animateRewardOrPenalty);
+                } else {
+                    setTimeout(() => {
+                        questionDiv.style.display = 'none';
+                        answersDiv.style.display = 'none';
+                        feedbackDiv.style.display = 'none';
+                        rollDieButton.disabled = false;
+                    }, 1000); // Wait 1 second after movement
+                }
+            }
+            animateRewardOrPenalty();
+        }
+
+        // Main animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
